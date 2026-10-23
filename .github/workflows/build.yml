@@ -1,0 +1,92 @@
+name: Build IPA
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  # sing-box 1.8 is the last line whose libbox API and Go toolchain still allow
+  # an iOS 12 deployment target; it includes VLESS, Reality and Hysteria2.
+  SING_BOX_VERSION: v1.8.14
+  GOMOBILE_VERSION: v0.1.3
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21.13'
+          cache: false
+
+      - name: Cache Libbox
+        id: libbox-cache
+        uses: actions/cache@v4
+        with:
+          path: build/Libbox.xcframework
+          key: libbox-${{ env.SING_BOX_VERSION }}-${{ env.GOMOBILE_VERSION }}-ios12-v1
+
+      - name: Build Libbox (sing-box core) for iOS 12
+        if: steps.libbox-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          go install github.com/sagernet/gomobile/cmd/gomobile@${GOMOBILE_VERSION}
+          go install github.com/sagernet/gomobile/cmd/gobind@${GOMOBILE_VERSION}
+          git clone --depth 1 --branch "$SING_BOX_VERSION" https://github.com/SagerNet/sing-box.git "$RUNNER_TEMP/sing-box"
+          cd "$RUNNER_TEMP/sing-box"
+          export PATH="$(go env GOPATH)/bin:$PATH"
+          gomobile init
+          # with_low_memory trims buffers for the small iOS 12 extension memory budget.
+          gomobile bind -v -target ios -iosversion=12.0 -libname=box \
+            -tags with_gvisor,with_quic,with_utls,with_low_memory \
+            -trimpath -ldflags "-s -w -buildid=" \
+            ./experimental/libbox
+          mkdir -p "$GITHUB_WORKSPACE/build"
+          rm -rf "$GITHUB_WORKSPACE/build/Libbox.xcframework"
+          mv Libbox.xcframework "$GITHUB_WORKSPACE/build/"
+
+      - name: Generate Xcode project
+        run: |
+          brew install xcodegen ldid
+          xcodegen generate
+
+      - name: Build app
+        run: |
+          set -euo pipefail
+          xcodebuild -project RufatVPN.xcodeproj -scheme RufatVPN -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' \
+            -derivedDataPath build/dd \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            build | tail -n 40
+
+      - name: Package IPA with entitlements (jailbreak / AppSync)
+        run: |
+          set -euo pipefail
+          APP=build/dd/Build/Products/Release-iphoneos/RufatVPN.app
+          test -d "$APP/PlugIns/RufatVPNTunnel.appex"
+          # Fake-sign with the NetworkExtension entitlement; AppSync Unified accepts it.
+          ldid -SResources/Tunnel.entitlements "$APP/PlugIns/RufatVPNTunnel.appex/RufatVPNTunnel"
+          ldid -SResources/App.entitlements "$APP/RufatVPN"
+          ldid -e "$APP/PlugIns/RufatVPNTunnel.appex/RufatVPNTunnel"
+          mkdir -p build/ipa/Payload
+          cp -R "$APP" build/ipa/Payload/
+          (cd build/ipa && zip -qry ../RufatVPN.ipa Payload)
+          ls -lh build/RufatVPN.ipa
+          lipo -info "$APP/RufatVPN"
+
+      - name: Publish pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="build-${{ github.run_number }}"
+          cp build/RufatVPN.ipa "build/RufatVPN-${TAG}.ipa"
+          gh release create "$TAG" "build/RufatVPN-${TAG}.ipa" --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" --prerelease --title "RufatVPN ${TAG}" \
+            --notes "Test build for iOS 12+. Install on a jailbroken device with AppSync Unified (Filza or Sideloadly with AppSync)."

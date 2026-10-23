@@ -1,0 +1,36 @@
+name: RufatVPN
+options:
+  deploymentTarget:
+    iOS: "12.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    TARGETED_DEVICE_FAMILY: "1,2"
+    ENABLE_BITCODE: NO
+    CODE_SIGNING_ALLOWED: NO
+targets:
+  RufatVPN:
+    type: application
+    platform: iOS
+    sources: [App, Shared]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.rufat.vpn
+        INFOPLIST_FILE: Resources/App-Info.plist
+        CODE_SIGN_ENTITLEMENTS: Resources/App.entitlements
+    dependencies:
+      - target: RufatVPNTunnel
+  RufatVPNTunnel:
+    type: app-extension
+    platform: iOS
+    sources: [Extension]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.rufat.vpn.tunnel
+        INFOPLIST_FILE: Resources/Tunnel-Info.plist
+        CODE_SIGN_ENTITLEMENTS: Resources/Tunnel.entitlements
+    dependencies:
+      - framework: build/Libbox.xcframework
+        embed: false
+      - sdk: libresolv.tbd
+      - sdk: NetworkExtension.framework
