@@ -69,8 +69,8 @@ final class TunnelPlatformInterface: NSObject, LibboxPlatformInterfaceProtocol {
         ret0_.pointee = fd
     }
 
-    func usePlatformAutoDetectInterfaceControl() -> Bool { true }
-    func autoDetectInterfaceControl(_ fd: Int32) throws {}
+    func usePlatformAutoDetectControl() -> Bool { true }
+    func autoDetectControl(_ fd: Int32) throws {}
     func writeLog(_ message: String?) {
         if let message = message { NSLog("RufatVPN: %@", message) }
     }
@@ -85,7 +85,7 @@ final class TunnelPlatformInterface: NSObject, LibboxPlatformInterfaceProtocol {
     func usePlatformDefaultInterfaceMonitor() -> Bool { false }
     func startDefaultInterfaceMonitor(_ listener: LibboxInterfaceUpdateListenerProtocol?) throws {}
     func closeDefaultInterfaceMonitor(_ listener: LibboxInterfaceUpdateListenerProtocol?) throws {}
-    func usePlatformInterfaceGetter() -> Bool { false }
+    func useGetter() -> Bool { false }
     func getInterfaces() throws -> LibboxNetworkInterfaceIteratorProtocol {
         throw NSError(domain: "RufatVPN", code: 14)
     }
